@@ -1,0 +1,48 @@
+name: Validate Build
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: true
+        type: string
+      image_repository:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+    secrets:
+      DOCKER_HUB_USERNAME:
+        required: true
+      DOCKER_HUB_PAT:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/docker
+          key: ${{ runner.os }}-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Build Docker image
+        run: |
+          docker buildx build --file ${{ inputs.working_directory }}/Dockerfile \
+          --tag ${{ inputs.image_repository }}:${{ inputs.image_tag }} \
+          --progress=plain ${{ inputs.working_directory }}
+
+      - name: Push Docker image to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKER_HUB_PAT }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+          docker push ${{ inputs.image_repository }}:${{ inputs.image_tag }}
