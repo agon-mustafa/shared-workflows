@@ -1,0 +1,84 @@
+name: terraform-apply-template
+
+# Specifies that this workflow can be called by other workflows
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'Path to the directory containing the Dockerfile'
+        required: true
+        type: string
+      terraform_version:
+        description: 'Terraform Version'
+        required: true
+        type: string
+        default: "1.5.7"
+      aws_iam_role_arn:
+        description: 'AWS IAM Role ARN'
+        required: true
+        type: string  
+      aws_iam_role_session_name:
+        description: 'AWS IAM Role Session Name'
+        required: true
+        type: string  
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        type: string  
+        default: "eu-central-1"
+    outputs:
+      terraform_apply_output:
+        description: 'Output from the terraform-apply-template workflow'
+        value: ${{ jobs.terraform-apply.outputs.job_output }}
+
+# Specifies the jobs within this workflow
+jobs:
+  terraform-apply:
+    runs-on: ubuntu-latest  
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+
+    outputs:
+      terraform_apply_output: ${{ steps.terraform-apply.outputs.step_output }}
+
+    # List of steps to execute in this job
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: configure-aws-credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_iam_role_arn }}
+          role-session-name: ${{ inputs.aws_iam_role_session_name }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: terraform-setup
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      - name: terraform-init
+        id: init
+        shell: bash
+        run: |
+          terraform init
+
+      - name: terraform-fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: terraform-validate
+        id: validate
+        run: |
+          terraform validate
+          echo "::set-output name=stdout::$(terraform validate -no-color)"
+
+      - name: terraform-apply
+        id: apply
+        run: |
+          terraform apply -lock=false -auto-approve -no-color -state-out=apply.tmp | tee -a ${GITHUB_WORKSPACE}/apply.out
